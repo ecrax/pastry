@@ -4,7 +4,7 @@ import { groupRouter } from "./group";
 import { authRouter } from "./auth";
 
 export const appRouter = t.router({
-  example: groupRouter,
+  group: groupRouter,
   auth: authRouter,
 });
 
