@@ -1,6 +1,7 @@
 import { authedProcedure, t } from "../trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { pusher } from "../../common/pusher";
 
 export const groupRouter = t.router({
   getAllWhereUser: authedProcedure.query(({ ctx }) => {
@@ -50,12 +51,16 @@ export const groupRouter = t.router({
           message: "You are not authorized to create pastes in this group",
         });
 
-      return ctx.prisma.paste.create({
+      const paste = await ctx.prisma.paste.create({
         data: {
           content: input.content,
           group_id: input.groupId,
           created_by_id: ctx.session.user.id,
         },
       });
+
+      await pusher.trigger(input.groupId, "paste-added", {});
+
+      return paste;
     }),
 });

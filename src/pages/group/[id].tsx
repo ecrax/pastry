@@ -4,7 +4,9 @@ import { type Session } from "next-auth";
 import { useSession } from "next-auth/react";
 import Head from "next/head";
 import { useRouter } from "next/router";
+import Pusher from "pusher-js";
 import React, { useEffect, useState } from "react";
+import { env } from "../../env/client.mjs";
 import { trpc } from "../../utils/trpc";
 
 const Group: NextPage = () => {
@@ -62,18 +64,40 @@ const GroupContent: React.FC<{
       event.preventDefault();
       const paste: string = event.clipboardData.getData("text");
 
-      if (paste !== "") addPaste.mutate({ content: paste, groupId: group.id });
+      if (paste !== "") {
+        addPaste.mutate({ content: paste, groupId: group.id });
+        setPastes([
+          ...(pastes ?? []),
+          {
+            content: paste,
+            created_by_id: session.user?.id ?? "",
+            created_at: new Date(),
+            group_id: group.id,
+            id: Date.now().toString(),
+          },
+        ]);
+      }
       console.log(paste);
     };
 
     window.addEventListener("paste", handlePaste);
+
+    //Pusher.logToConsole = true;
+    const pusher = new Pusher(env.NEXT_PUBLIC_PUSHER_KEY, {
+      cluster: "eu",
+    });
+
+    const channel = pusher.subscribe(group.id);
+    channel.bind("paste-added", () => refetch());
 
     return () => {
       window.removeEventListener("paste", handlePaste);
     };
   });
 
-  const { isLoading, data } = trpc.group.getPastes.useQuery(
+  //todo: only use this for initial load and refetch more intelligently after
+  //everytime a paste is added remotely ALL pastes get refetched -> this is our main bottleneck
+  const { isLoading, data, refetch } = trpc.group.getPastes.useQuery(
     {
       groupId: group.id,
     },
@@ -83,8 +107,6 @@ const GroupContent: React.FC<{
       },
     }
   );
-
-  console.log(data);
 
   if (isLoading || !data || !pastes) return <div>Loading...</div>;
 
