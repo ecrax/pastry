@@ -8,6 +8,7 @@ import Pusher from "pusher-js";
 import React, { useEffect, useState } from "react";
 import { env } from "../../env/client.mjs";
 import { trpc } from "../../utils/trpc";
+import { v4 as uuidv4 } from "uuid";
 
 const Group: NextPage = () => {
   const { query, push } = useRouter();
@@ -55,7 +56,17 @@ const GroupContent: React.FC<{
   session: Session;
   group: Group;
 }> = ({ session, group }) => {
-  const [pastes, setPastes] = useState<Paste[]>();
+  const [pastes, setPastes] = useState<Paste[]>([]);
+
+  //todo: only use this for initial load and refetch more intelligently after
+  //everytime a paste is added remotely ALL pastes get refetched -> this is our main bottleneck
+  const { isLoading, data, refetch } = trpc.group.getPastes.useQuery({
+    groupId: group.id,
+  });
+
+  useEffect(() => {
+    setPastes(data ?? []);
+  }, [data]);
 
   const addPaste = trpc.group.addPaste.useMutation();
 
@@ -65,19 +76,23 @@ const GroupContent: React.FC<{
       const paste: string = event.clipboardData.getData("text");
 
       if (paste !== "") {
-        addPaste.mutate({ content: paste, groupId: group.id });
+        const uuid = uuidv4();
+        addPaste.mutate({
+          content: paste,
+          groupId: group.id,
+          pasteId: uuid,
+        });
         setPastes([
-          ...(pastes ?? []),
+          ...pastes,
           {
             content: paste,
             created_by_id: session.user?.id ?? "",
             created_at: new Date(),
             group_id: group.id,
-            id: Date.now().toString(),
+            id: uuid,
           },
         ]);
       }
-      console.log(paste);
     };
 
     window.addEventListener("paste", handlePaste);
@@ -88,25 +103,25 @@ const GroupContent: React.FC<{
     });
 
     const channel = pusher.subscribe(group.id);
-    channel.bind("paste-added", () => refetch());
+    channel.bind("paste-added", ({ paste }: { paste: Paste }) => {
+      if (
+        !pastes.some((p) => {
+          if (p.id === paste.id) {
+            console.log("remote id", paste.id);
+            console.log("local id", p.id);
+          }
+          return p.id === paste.id;
+        })
+      ) {
+        refetch();
+        console.log("refetched cause of remote change");
+      }
+    });
 
     return () => {
       window.removeEventListener("paste", handlePaste);
     };
   });
-
-  //todo: only use this for initial load and refetch more intelligently after
-  //everytime a paste is added remotely ALL pastes get refetched -> this is our main bottleneck
-  const { isLoading, data, refetch } = trpc.group.getPastes.useQuery(
-    {
-      groupId: group.id,
-    },
-    {
-      onSuccess(data) {
-        setPastes(data);
-      },
-    }
-  );
 
   if (isLoading || !data || !pastes) return <div>Loading...</div>;
 

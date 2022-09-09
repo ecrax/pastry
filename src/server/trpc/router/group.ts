@@ -34,7 +34,13 @@ export const groupRouter = t.router({
       });
     }),
   addPaste: authedProcedure
-    .input(z.object({ groupId: z.string(), content: z.string() }))
+    .input(
+      z.object({
+        groupId: z.string(),
+        content: z.string(),
+        pasteId: z.string(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const { id } = await ctx.prisma.group.findFirstOrThrow({
         where: {
@@ -56,10 +62,11 @@ export const groupRouter = t.router({
           content: input.content,
           group_id: input.groupId,
           created_by_id: ctx.session.user.id,
+          id: input.pasteId,
         },
       });
 
-      await pusher.trigger(input.groupId, "paste-added", {});
+      await pusher.trigger(input.groupId, "paste-added", { paste });
 
       return paste;
     }),
